@@ -1,6 +1,7 @@
 # JSON
 
-This is a library for encoding/decoding JSON values.
+This is a [Tomo](https://tomo.bruce-hill.com) library for encoding/decoding
+JSON values.
 
 ## Usage
 
