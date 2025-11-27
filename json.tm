@@ -8,20 +8,19 @@ enum JSONDecodeResult(
     func invalid(text:Text -> JSONDecodeResult)
         return Failure("Unrecognized JSON: $(text.quoted())")
 
-extend Text
-    func json_quoted(text:Text -> Text)
-        return '"' ++ text.translate({
-            "\\"="\\\\",
-            '"'='\\"',
-            "\f"="\\f",
-            "\r"="\\r",
-            "\n"="\\n",
-            "\b"="\\b",
-            "\t"="\\t",
-        }) ++ '"'
+func quote_text(text:Text -> Text)
+    return '"' ++ text.translate({
+        "\\": "\\\\",
+        '"': '\\"',
+        "\f": "\\f",
+        "\r": "\\r",
+        "\n": "\\n",
+        "\b": "\\b",
+        "\t": "\\t",
+    }) ++ '"'
 
 enum JSON(
-    Object(items:{Text=JSON})
+    Object(items:{Text:JSON})
     Array(items:[JSON])
     Boolean(value:Bool)
     String(text:Text)
@@ -31,7 +30,7 @@ enum JSON(
     func encode(j:JSON -> Text)
         when j is Object(items)
             return "{" ++ ", ".join([
-                '$(k.json_quoted()): $(v.encode())'
+                '$(quote_text(k)): $(v.encode())'
                 for k,v in items
             ]) ++ "}"
         is Array(items)
@@ -39,7 +38,7 @@ enum JSON(
         is Boolean(value)
             return (if value then "true" else "false")
         is String(text)
-            return text.json_quoted()
+            return quote_text(text)
         is Number(n)
             return "$n"
         is Null
@@ -51,7 +50,7 @@ enum JSON(
             next_indent := current_indent ++ indent
             when j is Object(items)
                 return "{\n$next_indent" ++ ",\n$next_indent".join([
-                    '$(k.json_quoted()): $(v.pretty_print(max_line, indent, next_indent))'
+                    '$(quote_text(k)): $(v.pretty_print(max_line, indent, next_indent))'
                     for k,v in items
                 ]) ++ "\n$current_indent}"
             is Array(items)
@@ -64,9 +63,9 @@ enum JSON(
         if text.starts_with('"')
             string := ""
             pos := 2
-            escapes := {"n"="\n", "t"="\t", "r"="\r", '"'='"', "\\"="\\", "/"="/", "b"="\b", "f"="\f"}
+            escapes := {"n":"\n", "t":"\t", "r":"\r", '"':'"', "\\":"\\", "/":"/", "b":"\b", "f":"\f"}
             while pos <= text.length
-                c := text[pos]
+                c := text[pos]!
                 if c == '"'
                     if remainder
                         remainder[] = text.from(pos + 1)
@@ -75,11 +74,11 @@ enum JSON(
                 if c == "\\"
                     stop if pos + 1 > text.length
 
-                    if esc := escapes[text[pos+1]]
+                    if esc := escapes[text[pos+1]!]
                         string ++= esc
                         pos += 2
-                    else if m := text.matching_pattern($Pat/u{4 digit}/)
-                        string ++= Text.from_codepoints([Int32.parse(m.captures[1])!])
+                    else if m := $Pat'u{4 digit}'.match(text)
+                        string ++= Text.from_utf32([Int32.parse(m.captures[1]!)!])!
                         pos += 1 + m.text.length
                     else
                         if remainder
@@ -106,31 +105,31 @@ enum JSON(
             return JSON.parse_text(text, remainder)
         else if text.starts_with("[")
             elements : &[JSON]
-            text = text.from(2).trim_pattern($Pat"{whitespace}", right=no)
+            text = $Pat"{whitespace}".trim(text.from(2), right=no)
             repeat
                 when JSON.parse(text, &text) is Success(elem)
                     elements.insert(elem)
                 else stop
 
-                if delim := text.matching_pattern($Pat'{0+ ws},{0+ ws}')
+                if delim := $Pat'{0+ ws},{0+ ws}'.match(text)
                     text = text.from(delim.text.length + 1)
                 else stop
 
             if trailing_commas
-                if delim := text.matching_pattern($Pat'{0+ ws},{0+ ws}')
+                if delim := $Pat'{0+ ws},{0+ ws}'.match(text)
                     text = text.from(delim.text.length + 1)
                 
-            if terminator := text.matching_pattern($Pat'{0+ ws}]')
+            if terminator := $Pat'{0+ ws}]'.match(text)
                 if remainder
                     remainder[] = text.from(terminator.text.length + 1)
                 return Success(JSON.Array(elements))
         else if text.starts_with("{")
-            object : &{Text=JSON}
-            text = text.from(2).trim_pattern($Pat"{whitespace}", right=no)
+            object : &{Text:JSON}
+            text = $Pat"{whitespace}".trim(text.from(2), right=no)
             repeat
                 key_text := text
                 when JSON.parse_text(text, &text) is Success(key)
-                    if separator := text.matching_pattern($Pat'{0+ ws}:{0+ ws}')
+                    if separator := $Pat'{0+ ws}:{0+ ws}'.match(text)
                         text = text.from(separator.text.length + 1)
                     else
                         return JSONDecodeResult.invalid(text)
@@ -144,15 +143,15 @@ enum JSON(
                         return JSONDecodeResult.invalid(text)
                 else stop
 
-                if delim := text.matching_pattern($Pat'{0+ ws},{0+ ws}')
+                if delim := $Pat'{0+ ws},{0+ ws}'.match(text)
                     text = text.from(delim.text.length + 1)
                 else stop
 
             if trailing_commas
-                if delim := text.matching_pattern($Pat'{0+ ws},{0+ ws}')
+                if delim := $Pat'{0+ ws},{0+ ws}'.match(text)
                     text = text.from(delim.text.length + 1)
                 
-            if terminator := text.matching_pattern($Pat'{0+ ws}{}}')
+            if terminator := $Pat'{0+ ws}{}}'.match(text)
                 if remainder
                     remainder[] = text.from(terminator.text.length + 1)
                 return Success(JSON.Object(object))
@@ -160,7 +159,7 @@ enum JSON(
         return JSONDecodeResult.invalid(text)
 
 func main(input=(/dev/stdin), pretty_print:Bool = no, trailing_commas:Bool = yes)
-    text := (input.read() or exit("Invalid file: $input")).trim_pattern($Pat"{whitespace}")
+    text := $Pat"{whitespace}".trim(input.read() or exit("Invalid file: $input"))
     while text.length > 0
         when JSON.parse(text, remainder=&text, trailing_commas=trailing_commas) is Success(json)
             if pretty_print
@@ -170,4 +169,4 @@ func main(input=(/dev/stdin), pretty_print:Bool = no, trailing_commas:Bool = yes
         is Failure(msg)
             exit("\033[31;1m$msg\033[m", code=1)
 
-        text = text.trim_pattern($Pat"{whitespace}")
+        text = $Pat"{whitespace}".trim(text)
