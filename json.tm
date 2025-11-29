@@ -117,7 +117,10 @@ enum JSON(
             remainder[] = text
         return JSONDecodeResult.invalid(text)
 
-    func parse(text:Text, remainder:&Text? = none, trailing_commas:Bool=no -> JSONDecodeResult)
+    func parse(text:Text, remainder:&Text? = none, trailing_commas:Bool=no, max_depth=25 -> JSONDecodeResult)
+        if max_depth <= 0
+            return JSONDecodeResult.Failure("Maximum depth exceeded")
+
         if text.starts_with("true", remainder)
             return Success(JSON.Boolean(yes))
         else if text.starts_with("false", remainder)
@@ -132,7 +135,7 @@ enum JSON(
             elements : &[JSON]
             text = $Pat"{whitespace}".trim(text.from(2), right=no)
             repeat
-                when JSON.parse(text, &text) is Success(elem)
+                when JSON.parse(text, &text, max_depth=max_depth-1) is Success(elem)
                     elements.insert(elem)
                 else stop
 
@@ -159,7 +162,7 @@ enum JSON(
                     else
                         return JSONDecodeResult.invalid(text)
 
-                    when JSON.parse(text, &text) is Success(value)
+                    when JSON.parse(text, &text, max_depth=max_depth-1) is Success(value)
                         when key is String(str)
                             object[str] = value
                         else
@@ -183,10 +186,10 @@ enum JSON(
 
         return JSONDecodeResult.invalid(text)
 
-func main(input=(/dev/stdin), pretty_print:Bool = no, trailing_commas:Bool = yes)
+func main(input=(/dev/stdin), pretty_print:Bool = no, trailing_commas:Bool = yes, max_depth=100)
     text := $Pat"{whitespace}".trim(input.read() or exit("Invalid file: $input"))
     while text.length > 0
-        when JSON.parse(text, remainder=&text, trailing_commas=trailing_commas) is Success(json)
+        when JSON.parse(text, remainder=&text, trailing_commas=trailing_commas, max_depth=max_depth) is Success(json)
             if pretty_print
                 say(json.pretty_print())
             else
