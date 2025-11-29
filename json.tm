@@ -24,6 +24,7 @@ enum JSON(
     Array(items:[JSON])
     Boolean(value:Bool)
     String(text:Text)
+    InvalidUnicodeString(utf32:[Int32])
     Number(n:Num)
     Null
 )
@@ -39,6 +40,13 @@ enum JSON(
             return (if value then "true" else "false")
         is String(text)
             return quote_text(text)
+        is InvalidUnicodeString(utf32)
+            return '"' ++ ((++: (
+                if text := Text.from_utf32([u])
+                    text
+                else
+                    "\\u$(u.hex(digits=4, prefix=no))"
+            ) for u in utf32) or "") ++ '"'
         is Number(n)
             return "$n"
         is Null
@@ -61,7 +69,24 @@ enum JSON(
 
     func parse_text(text:Text, remainder:&Text? = none -> JSONDecodeResult)
         if text.starts_with('"')
-            string := ""
+            ret := JSON.String("")
+            add_codepoint := func(cur:JSON, codepoint:Int32 -> JSON)
+                when cur is String(str)
+                    if byte_str := Text.from_utf32([codepoint])
+                        return JSON.String(str ++ byte_str)
+                    else
+                        return JSON.InvalidUnicodeString(str.utf32() ++ [codepoint])
+                is InvalidUnicodeString(utf32)
+                    return JSON.InvalidUnicodeString(utf32 ++ [codepoint])
+                else return cur
+
+            add_text := func(cur:JSON, text:Text -> JSON)
+                when cur is String(str)
+                    return JSON.String(str ++ text)
+                is InvalidUnicodeString(utf32)
+                    return JSON.InvalidUnicodeString(utf32 ++ text.utf32())
+                else return cur
+
             pos := 2
             escapes := {"n":"\n", "t":"\t", "r":"\r", '"':'"', "\\":"\\", "/":"/", "b":"\b", "f":"\f"}
             while pos <= text.length
@@ -69,23 +94,23 @@ enum JSON(
                 if c == '"'
                     if remainder
                         remainder[] = text.from(pos + 1)
-                    return Success(JSON.String(string))
+                    return Success(ret)
 
                 if c == "\\"
                     stop if pos + 1 > text.length
 
                     if esc := escapes[text[pos+1]!]
-                        string ++= esc
+                        ret = add_text(ret, esc)
                         pos += 2
                     else if m := $Pat'u{4 hex}'.match(text, pos=pos + 1)
-                        string ++= Text.from_utf32([Int32.parse("0x"++m.captures[1]!)!])!
+                        ret = add_codepoint(ret, Int32.parse("0x"++m.captures[1]!)!)
                         pos += 1 + m.text.length
                     else
                         if remainder
                             remainder[] = text
                         return JSONDecodeResult.invalid(text)
                 else    
-                    string ++= c
+                    ret = add_text(ret, c)
                     pos += 1
 
         if remainder
