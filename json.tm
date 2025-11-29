@@ -77,7 +77,7 @@ enum JSON(
                     if esc := escapes[text[pos+1]!]
                         string ++= esc
                         pos += 2
-                    else if m := $Pat'u{4 digit}'.match(text)
+                    else if m := $Pat'u{4 digit}'.match(text, pos=pos + 1)
                         string ++= Text.from_utf32([Int32.parse(m.captures[1]!)!])!
                         pos += 1 + m.text.length
                     else
