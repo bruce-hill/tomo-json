@@ -1,5 +1,10 @@
 # Version History
 
+## v2025-12-06
+
+- Improved strict handling and edge cases.
+- Fixed some bugs.
+
 ## v2025-11-29
 
 - Bump version for patterns dependency.
